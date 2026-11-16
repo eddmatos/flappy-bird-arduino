@@ -10,7 +10,7 @@ import serial
 # 1. CONEXAO COM O ARDUINO
 # ============================================================
 
-PORTA = "COM6"       # Altere caso o Arduino esteja em outra porta COM
+PORTA = "COM6"  # Altere para a porta em que o Arduino aparece no Windows.
 BAUD_RATE = 9600
 
 try:
@@ -20,17 +20,16 @@ except serial.SerialException as erro:
     print("Feche o Monitor Serial da Arduino IDE e confira a porta em Ferramentas > Porta.")
     raise SystemExit(1)
 
-# O Arduino reinicia quando a conexao serial e aberta.
+# O Arduino pode reiniciar quando a conexao serial e aberta.
 time.sleep(2)
 
-# Ultima distancia valida recebida do sensor.
 distancia_cm = 20.0
 buffer_serial = ""
 leituras_sensor = deque(maxlen=5)
 
 
 def atualizar_sensor():
-    """Le dados enviados pelo Arduino e filtra pequenas oscilacoes."""
+    """Le os dados do Arduino e filtra pequenas oscilacoes do sensor."""
     global distancia_cm, buffer_serial
 
     quantidade = arduino.in_waiting
@@ -40,7 +39,7 @@ def atualizar_sensor():
     dados = arduino.read(quantidade)
     buffer_serial += dados.decode("utf-8", errors="ignore")
 
-    # Evita que o buffer cresca indefinidamente se chegar algum dado incompleto.
+    # Evita que o buffer cresca indefinidamente com dados incompletos.
     if len(buffer_serial) > 300:
         buffer_serial = buffer_serial[-150:]
 
@@ -54,7 +53,7 @@ def atualizar_sensor():
             if 2 <= valor <= 60:
                 leituras_sensor.append(valor)
 
-                # Comeca a filtrar assim que houver pelo menos 3 amostras.
+                # Usa a mediana assim que houver pelo menos 3 leituras.
                 if len(leituras_sensor) >= 3:
                     distancia_cm = median(leituras_sensor)
 
@@ -70,31 +69,35 @@ def atualizar_sensor():
 pygame.init()
 pygame.font.init()
 
-LARGURA = 480
-ALTURA = 640
-CHAO_ALTURA = 42
-ALTURA_TAMPA = 24
+# Resolucao solicitada: 1366 x 768 pixels.
+LARGURA = 1366
+ALTURA = 768
+CHAO_ALTURA = 52
+ALTURA_TAMPA = 28
 ALTURA_AREA_JOGO = ALTURA - CHAO_ALTURA
 
 pygame.display.set_caption("Flappy Bird - Arduino Ultrassonico")
 
-# Tenta abrir em tela cheia mantendo a resolucao logica e a proporcao.
 try:
+    # Tela cheia na resolucao definida acima.
     tela = pygame.display.set_mode(
         (LARGURA, ALTURA),
-        pygame.FULLSCREEN | pygame.SCALED
+        pygame.FULLSCREEN
     )
-except (pygame.error, AttributeError):
-    # Compatibilidade com versoes antigas do Pygame sem SCALED.
-    tela = pygame.display.set_mode((LARGURA, ALTURA), pygame.FULLSCREEN)
+except pygame.error as erro:
+    print(f"Nao foi possivel abrir a tela cheia: {erro}")
+    print("Verifique se o monitor suporta 1366 x 768 pixels.")
+    arduino.close()
+    pygame.quit()
+    raise SystemExit(1)
 
 relogio = pygame.time.Clock()
 
-# Fontes da interface.
-fonte_hud_titulo = pygame.font.SysFont("consolas", 13, bold=True)
-fonte_hud_valor = pygame.font.SysFont("consolas", 22, bold=True)
-fonte_game_over = pygame.font.SysFont("consolas", 30, bold=True)
-fonte_game_over_menor = pygame.font.SysFont("consolas", 15, bold=True)
+# Fontes da interface, ampliadas para a resolucao 1366 x 768.
+fonte_hud_titulo = pygame.font.SysFont("consolas", 16, bold=True)
+fonte_hud_valor = pygame.font.SysFont("consolas", 27, bold=True)
+fonte_game_over = pygame.font.SysFont("consolas", 40, bold=True)
+fonte_game_over_menor = pygame.font.SysFont("consolas", 20, bold=True)
 
 # Paleta de cores.
 AZUL_ESCURO = (10, 39, 78)
@@ -102,15 +105,16 @@ AZUL_BORDA = (90, 185, 235)
 BRANCO = (255, 255, 255)
 AMARELO = (255, 215, 65)
 
+
 # ============================================================
 # 3. CONFIGURACOES DO PASSARO E DO CONTROLE
 # ============================================================
 
-PASSARO_X = 110
+PASSARO_X = int(LARGURA * 0.22)  # Aproximadamente 300 pixels.
 PASSARO_RAIO = 15
 passaro_y = ALTURA // 2
 
-# Faixa ampla: a mao pode se movimentar entre 5 e 50 cm.
+# Faixa ampla de controle da mao.
 DISTANCIA_MIN = 5.0
 DISTANCIA_MAX = 50.0
 
@@ -150,16 +154,16 @@ def controlar_passaro():
 # 4. CONFIGURACOES DOS CANOS
 # ============================================================
 
-LARGURA_CANO = 70
-ESPACO_CANOS = 175
-VELOCIDADE = 210.0
-INTERVALO_CANOS = 1.5
+LARGURA_CANO = 82
+ESPACO_CANOS = 190
+VELOCIDADE = 230.0
+INTERVALO_CANOS = 1.8
 
 
 def criar_cano():
     """Cria um par de canos com abertura em uma posicao aleatoria."""
-    centro_minimo = 165
-    centro_maximo = ALTURA_AREA_JOGO - 165
+    centro_minimo = 180
+    centro_maximo = ALTURA_AREA_JOGO - 180
     centro = random.randint(centro_minimo, centro_maximo)
 
     return {
@@ -215,17 +219,26 @@ def desenhar_fundo(superficie):
         )
         pygame.draw.line(superficie, cor, (0, y), (LARGURA, y))
 
-    # Nuvens do cenario.
-    desenhar_nuvem(superficie, 15, 115, 0.90)
-    desenhar_nuvem(superficie, 245, 185, 0.75)
-    desenhar_nuvem(superficie, 370, 85, 0.65)
+    # Nuvens distribuidas por toda a largura da tela.
+    nuvens = [
+        (int(LARGURA * 0.02), 115, 0.90),
+        (int(LARGURA * 0.19), 190, 0.75),
+        (int(LARGURA * 0.37), 85, 0.70),
+        (int(LARGURA * 0.54), 145, 0.85),
+        (int(LARGURA * 0.72), 75, 0.75),
+        (int(LARGURA * 0.86), 185, 0.90),
+        (int(LARGURA * 0.94), 95, 0.65)
+    ]
+
+    for x, y, escala in nuvens:
+        desenhar_nuvem(superficie, x, y, escala)
 
     # Predios ao fundo.
-    base_predios = ALTURA_AREA_JOGO - 66
+    base_predios = ALTURA_AREA_JOGO - 82
 
-    for indice, x in enumerate(range(-5, LARGURA, 43)):
-        largura = 28
-        altura = 55 + (indice * 29 % 58)
+    for indice, x in enumerate(range(-5, LARGURA, 58)):
+        largura = 39
+        altura = 65 + (indice * 37 % 100)
         topo = base_predios - altura
 
         pygame.draw.rect(
@@ -235,32 +248,32 @@ def desenhar_fundo(superficie):
         )
 
         # Janelas dos predios.
-        for wx in range(x + 7, x + largura - 4, 9):
-            for wy in range(topo + 9, base_predios - 5, 14):
+        for wx in range(x + 8, x + largura - 4, 12):
+            for wy in range(topo + 12, base_predios - 5, 19):
                 pygame.draw.rect(
                     superficie,
                     (125, 190, 220),
-                    (wx, wy, 4, 6)
+                    (wx, wy, 5, 8)
                 )
 
     # Vegetacao em camadas.
-    for indice, x in enumerate(range(-45, LARGURA + 30, 78)):
+    for indice, x in enumerate(range(-60, LARGURA + 60, 105)):
         cor = (35 + (indice % 2) * 12, 143, 94)
 
         pygame.draw.ellipse(
             superficie,
             cor,
-            (x, ALTURA - 116, 105, 85)
+            (x, ALTURA_AREA_JOGO - 122, 130, 100)
         )
 
         pygame.draw.ellipse(
             superficie,
             (75, 190, 105),
-            (x + 16, ALTURA - 105, 60, 44)
+            (x + 19, ALTURA_AREA_JOGO - 112, 75, 55)
         )
 
 
-# O fundo e estatico, entao desenhamos uma unica vez para poupar processamento.
+# O fundo e estatico, entao e desenhado uma unica vez para poupar processamento.
 fundo = pygame.Surface((LARGURA, ALTURA))
 desenhar_fundo(fundo)
 
@@ -279,33 +292,33 @@ def desenhar_corpo_cano(superficie, x, y, altura):
     pygame.draw.rect(
         superficie,
         (12, 62, 42),
-        (x + 7, y, LARGURA_CANO - 14, altura)
+        (x + 8, y, LARGURA_CANO - 16, altura)
     )
 
     # Corpo verde.
     pygame.draw.rect(
         superficie,
         (25, 155, 65),
-        (x + 10, y + 3, LARGURA_CANO - 20, altura - 6)
+        (x + 11, y + 3, LARGURA_CANO - 22, altura - 6)
     )
 
     # Reflexos e sombra lateral.
     pygame.draw.rect(
         superficie,
         (133, 244, 88),
-        (x + 12, y + 3, 9, altura - 6)
+        (x + 14, y + 3, 11, altura - 6)
     )
 
     pygame.draw.rect(
         superficie,
         (75, 205, 65),
-        (x + 23, y + 3, 8, altura - 6)
+        (x + 29, y + 3, 10, altura - 6)
     )
 
     pygame.draw.rect(
         superficie,
         (12, 105, 53),
-        (x + LARGURA_CANO - 22, y + 3, 8, altura - 6)
+        (x + LARGURA_CANO - 25, y + 3, 10, altura - 6)
     )
 
 
@@ -328,13 +341,13 @@ def desenhar_tampa_cano(superficie, x, y):
     pygame.draw.rect(
         superficie,
         (160, 250, 95),
-        (x + 7, y + 4, 12, ALTURA_TAMPA - 8)
+        (x + 8, y + 5, 15, ALTURA_TAMPA - 10)
     )
 
     pygame.draw.rect(
         superficie,
         (80, 215, 70),
-        (x + 22, y + 4, 12, ALTURA_TAMPA - 8)
+        (x + 28, y + 5, 14, ALTURA_TAMPA - 10)
     )
 
 
@@ -452,45 +465,45 @@ def desenhar_chao(superficie, deslocamento):
     pygame.draw.rect(
         superficie,
         (125, 73, 42),
-        (0, y + 8, LARGURA, CHAO_ALTURA - 8)
+        (0, y + 9, LARGURA, CHAO_ALTURA - 9)
     )
 
     # Grama e faixa iluminada.
-    pygame.draw.rect(superficie, (65, 180, 60), (0, y, LARGURA, 10))
+    pygame.draw.rect(superficie, (65, 180, 60), (0, y, LARGURA, 11))
     pygame.draw.rect(superficie, (155, 235, 75), (0, y, LARGURA, 4))
 
     # Textura do chao, com movimento para dar sensacao de velocidade.
-    deslocamento = int(deslocamento % 24)
-    for x in range(-24, LARGURA + 24, 24):
+    deslocamento = int(deslocamento % 26)
+    for x in range(-26, LARGURA + 26, 26):
         xx = x - deslocamento
 
         pygame.draw.rect(
             superficie,
             (160, 95, 50),
-            (xx + 3, y + 14, 13, 7)
+            (xx + 3, y + 16, 14, 8)
         )
         pygame.draw.rect(
             superficie,
             (90, 48, 32),
-            (xx + 11, y + 27, 9, 6)
+            (xx + 12, y + 31, 10, 7)
         )
 
 
 def desenhar_painel(superficie, x, titulo, valor, largura):
-    painel = pygame.Rect(x, 12, largura, 59)
+    painel = pygame.Rect(x, 18, largura, 76)
 
     pygame.draw.rect(
         superficie,
         AZUL_ESCURO,
         painel,
-        border_radius=10
+        border_radius=12
     )
     pygame.draw.rect(
         superficie,
         AZUL_BORDA,
         painel,
         2,
-        border_radius=10
+        border_radius=12
     )
 
     texto_titulo = fonte_hud_titulo.render(
@@ -502,45 +515,74 @@ def desenhar_painel(superficie, x, titulo, valor, largura):
 
     superficie.blit(
         texto_titulo,
-        (painel.centerx - texto_titulo.get_width() // 2, painel.y + 5)
+        (painel.centerx - texto_titulo.get_width() // 2, painel.y + 8)
     )
     superficie.blit(
         texto_valor,
-        (painel.centerx - texto_valor.get_width() // 2, painel.y + 26)
+        (painel.centerx - texto_valor.get_width() // 2, painel.y + 36)
     )
 
 
 def desenhar_hud(superficie):
+    largura_distancia = 190
+    largura_pontos = 170
+    largura_recorde = 190
+    margem = 28
+
+    # Distancia da mao, no canto esquerdo.
     desenhar_painel(
-        superficie, 8, "DISTANCIA", f"{distancia_cm:.1f} cm", 145
+        superficie,
+        margem,
+        "DISTANCIA DA MAO",
+        f"{distancia_cm:.1f} cm",
+        largura_distancia
     )
+
+    # Pontuacao, centralizada.
     desenhar_painel(
-        superficie, 176, "PONTOS", pontuacao, 128
+        superficie,
+        (LARGURA - largura_pontos) // 2,
+        "PONTOS",
+        pontuacao,
+        largura_pontos
     )
+
+    # Recorde, no canto direito.
     desenhar_painel(
-        superficie, 327, "RECORDE", recorde, 145
+        superficie,
+        LARGURA - largura_recorde - margem,
+        "RECORDE",
+        recorde,
+        largura_recorde
     )
 
 
 def desenhar_game_over(superficie):
     camada = pygame.Surface((LARGURA, ALTURA), pygame.SRCALPHA)
-    camada.fill((5, 15, 35, 165))
+    camada.fill((5, 15, 35, 175))
     superficie.blit(camada, (0, 0))
 
-    painel = pygame.Rect(35, 245, LARGURA - 70, 155)
+    largura_painel = 540
+    altura_painel = 230
+    painel = pygame.Rect(
+        (LARGURA - largura_painel) // 2,
+        (ALTURA - altura_painel) // 2,
+        largura_painel,
+        altura_painel
+    )
 
     pygame.draw.rect(
         superficie,
         AZUL_ESCURO,
         painel,
-        border_radius=18
+        border_radius=22
     )
     pygame.draw.rect(
         superficie,
         AMARELO,
         painel,
         3,
-        border_radius=18
+        border_radius=22
     )
 
     titulo = fonte_game_over.render(
@@ -555,15 +597,15 @@ def desenhar_game_over(superficie):
 
     superficie.blit(
         titulo,
-        (painel.centerx - titulo.get_width() // 2, 265)
+        (painel.centerx - titulo.get_width() // 2, painel.y + 35)
     )
     superficie.blit(
         texto,
-        (painel.centerx - texto.get_width() // 2, 320)
+        (painel.centerx - texto.get_width() // 2, painel.y + 105)
     )
     superficie.blit(
         reiniciar,
-        (painel.centerx - reiniciar.get_width() // 2, 355)
+        (painel.centerx - reiniciar.get_width() // 2, painel.y + 160)
     )
 
 
@@ -572,7 +614,7 @@ def desenhar_game_over(superficie):
 # ============================================================
 
 pontuacao = 0
-recorde = 0  # Recorde permanece enquanto o programa estiver aberto.
+recorde = 0  # O recorde permanece enquanto o programa estiver aberto.
 canos = []
 tempo_cano = 0.0
 passaro_y = ALTURA // 2
@@ -590,7 +632,7 @@ try:
         # Limita a 60 FPS e evita saltos grandes se houver uma travada.
         dt = min(relogio.tick(60) / 1000.0, 0.05)
 
-        # Le dados do sensor mesmo durante a tela de fim de jogo.
+        # Le os dados do sensor mesmo durante a tela de fim de jogo.
         atualizar_sensor()
 
         # ----------------------------
@@ -666,9 +708,12 @@ try:
                         cano["centro"] + ESPACO_CANOS // 2
                     )
 
-                    # Retangulos de colisao incluem as tampas dos canos.
+                    # Retangulos de colisao incluem as tampas.
                     cano_cima = pygame.Rect(
-                        x, 0, LARGURA_CANO, limite_superior
+                        x,
+                        0,
+                        LARGURA_CANO,
+                        limite_superior
                     )
                     cano_baixo = pygame.Rect(
                         x,
